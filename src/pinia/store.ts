@@ -139,6 +139,12 @@ function createOptionsStore($id, options, pinia) {
     }, {})
     return Object.assign(localState, actions, gettersArgs)
   }
-
-  return createSetupStore($id, setup, pinia, true)
+  const store = createSetupStore($id, setup, pinia, true)
+  store.$reset = function () {
+    const newState = state ? state() : {}
+    store.$patch(state => {
+      Object.assign(state, newState)
+    })
+  }
+  return
 }
