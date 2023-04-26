@@ -1,9 +1,32 @@
 import { setActivePinia } from 'pinia'
-import { computed, effectScope, getCurrentInstance, inject, isReactive, isRef, reactive } from 'vue'
+import {
+  computed,
+  effectScope,
+  getCurrentInstance,
+  inject,
+  isReactive,
+  isRef,
+  reactive,
+  ref,
+  toRefs
+} from 'vue'
 import { activePinia, piniaSymbol } from './rootStore'
-import { isString, isFunction } from './utils'
+import { isString, isFunction, isObject } from './utils'
 function isComputed(v) {
   return !!(isRef(v) && (v as any).effect)
+}
+// 合并两个对象
+function mergeReactiveObject(target, state) {
+  for (let key in state) {
+    let oldValue = target[key]
+    let newValue = state[key]
+    // 都是对象，需要递归合并
+    if (isObject(oldValue) && isObject(newValue)) {
+      target[key] = mergeReactiveObject(oldValue, newValue)
+    } else {
+      target[key] = newValue
+    }
+  }
 }
 export function defineStore(idOrOptions, setup) {
   const isSetupStore = typeof setup === 'function'
@@ -43,8 +66,22 @@ export function defineStore(idOrOptions, setup) {
 function createSetupStore($id, setup, pinia, isOptions = false) {
   // store自己的scope,pinia._e是全局的scope
   let scope
+  // $patch，可能传入一个对象或函数
+  function $patch(partialStateOrMutation) {
+    // 函数
+    if (isFunction(partialStateOrMutation)) {
+      partialStateOrMutation(pinia.state.value[$id])
+    } else {
+      // 用新的对象合并原来的状态
+      mergeReactiveObject(pinia.state.value[$id], partialStateOrMutation)
+    }
+  }
+  const partialStore = {
+    $patch
+  }
+
   // 每个store都是一个响应式对象
-  const store = reactive<any>({})
+  const store = reactive<any>(partialStore)
 
   // 对于setup api 没有初始化状态
   const initalState = pinia.state.value[$id]
@@ -91,7 +128,7 @@ function createOptionsStore($id, options, pinia) {
   function setup() {
     // pinia.state是一个ref,给当前store的state赋值
     pinia.state.value[$id] = state ? state() : {}
-    const localState = pinia.state.value[$id]
+    const localState = toRefs(pinia.state.value[$id])
     // getters
     const gettersArgs = Object.keys(getters || {}).reduce((computedGetters, name) => {
       computedGetters[name] = computed(() => {
