@@ -8,7 +8,8 @@ import {
   isRef,
   reactive,
   ref,
-  toRefs
+  toRefs,
+  watch
 } from 'vue'
 import { activePinia, piniaSymbol } from './rootStore'
 import { isString, isFunction, isObject } from './utils'
@@ -77,7 +78,18 @@ function createSetupStore($id, setup, pinia, isOptions = false) {
     }
   }
   const partialStore = {
-    $patch
+    $patch,
+    $subscribe(callback, options = {}) {
+      scope.run(() => {
+        watch(
+          pinia.state.value[$id],
+          state => {
+            callback({ storeId: $id }, state)
+          },
+          options
+        )
+      })
+    }
   }
 
   // 每个store都是一个响应式对象
@@ -146,5 +158,5 @@ function createOptionsStore($id, options, pinia) {
       Object.assign(state, newState)
     })
   }
-  return
+  return store
 }
