@@ -12,6 +12,7 @@ import {
   watch
 } from 'vue'
 import { activePinia, piniaSymbol } from './rootStore'
+import { addSubscription, triggerSubscriptions } from './subscribe'
 import { isString, isFunction, isObject } from './utils'
 function isComputed(v) {
   return !!(isRef(v) && (v as any).effect)
@@ -77,6 +78,7 @@ function createSetupStore($id, setup, pinia, isOptions = false) {
       mergeReactiveObject(pinia.state.value[$id], partialStateOrMutation)
     }
   }
+  let actionSubscriptions = []
   const partialStore = {
     $patch,
     $subscribe(callback, options = {}) {
@@ -89,7 +91,8 @@ function createSetupStore($id, setup, pinia, isOptions = false) {
           options
         )
       })
-    }
+    },
+    $onAction: addSubscription.bind(null, actionSubscriptions)
   }
 
   // 每个store都是一个响应式对象
@@ -107,10 +110,35 @@ function createSetupStore($id, setup, pinia, isOptions = false) {
 
   function wrapAction(name, action) {
     return function () {
+      const afterCallbackList: any[] = []
+      const onErrorCallckList: any[] = []
+      function after(callbck) {
+        afterCallbackList.push(callbck)
+      }
+      function onError(callbck) {
+        onErrorCallckList.push(callbck)
+      }
+      triggerSubscriptions(actionSubscriptions, { after, onError })
       const args = Array.from(arguments)
-
-      // 确保this指向store
-      return action.apply(store, arguments)
+      let ret
+      try {
+        // 确保this指向store
+        ret = action.apply(store, args)
+      } catch (e) {
+        triggerSubscriptions(onErrorCallckList, e)
+      }
+      if (ret instanceof Promise) {
+        return ret
+          .then(value => {
+            triggerSubscriptions(afterCallbackList, value)
+            return value
+          })
+          .catch(e => {
+            triggerSubscriptions(onErrorCallckList, e)
+          })
+      }
+      triggerSubscriptions(afterCallbackList, ret)
+      return ret
     }
   }
 
