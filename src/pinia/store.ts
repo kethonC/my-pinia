@@ -167,6 +167,14 @@ function createSetupStore($id, setup, pinia, isOptions = false) {
 
   pinia._s.set($id, store)
   Object.assign(store, setupStore)
+
+  Object.defineProperty(store, '$state', {
+    get: () => pinia.state.value[$id],
+    set: state => {
+      $patch($state => Object.assign($state, state))
+    }
+  })
+
   return store
 }
 function createOptionsStore($id, options, pinia) {
