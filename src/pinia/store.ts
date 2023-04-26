@@ -92,7 +92,15 @@ function createSetupStore($id, setup, pinia, isOptions = false) {
         )
       })
     },
-    $onAction: addSubscription.bind(null, actionSubscriptions)
+    $onAction: addSubscription.bind(null, actionSubscriptions),
+    $dispose() {
+      // 清除响应式
+      scope.stop()
+      // 清除订阅
+      actionSubscriptions = []
+      // 删除store
+      pinia._s.delete($id)
+    }
   }
 
   // 每个store都是一个响应式对象
