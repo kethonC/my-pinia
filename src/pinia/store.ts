@@ -1,9 +1,12 @@
 import { setActivePinia } from 'pinia'
-import { computed, effectScope, getCurrentInstance, inject, reactive } from 'vue'
+import { computed, effectScope, getCurrentInstance, inject, isReactive, isRef, reactive } from 'vue'
 import { activePinia, piniaSymbol } from './rootStore'
 import { isString, isFunction } from './utils'
-
+function isComputed(v) {
+  return !!(isRef(v) && (v as any).effect)
+}
 export function defineStore(idOrOptions, setup) {
+  const isSetupStore = typeof setup === 'function'
   let id
   let options
   if (isString(idOrOptions)) {
@@ -23,8 +26,13 @@ export function defineStore(idOrOptions, setup) {
     pinia = activePinia!
 
     if (!pinia._s.has(id)) {
-      // 第一次使用该store,则创建映射关系, Options Store
-      createOptionsStore(id, options, pinia)
+      // 第一次使用该store,则创建映射关系
+      if (isSetupStore) {
+        createSetupStore(id, options, pinia)
+      } else {
+        // Options Store
+        createOptionsStore(id, options, pinia)
+      }
     }
     const store = pinia?._s.get(id)
     return store
@@ -32,29 +40,17 @@ export function defineStore(idOrOptions, setup) {
 
   return useStore
 }
-
-function createOptionsStore($id, options, pinia) {
-  const { state, getters, actions } = options
+function createSetupStore($id, setup, pinia, isOptions = false) {
   // store自己的scope,pinia._e是全局的scope
   let scope
   // 每个store都是一个响应式对象
   const store = reactive<any>({})
 
-  // 对用户传入的state,getters,actions进行处理
-  function setup() {
-    // pinia.state是一个ref,给当前store的state赋值
-    pinia.state.value[$id] = state ? state() : {}
-    const localState = pinia.state.value[$id]
-    // getters
-    const gettersArgs = Object.keys(getters || {}).reduce((computedGetters, name) => {
-      computedGetters[name] = computed(() => {
-        return getters[name].call(store, store)
-      })
-      return computedGetters
-    }, {})
-    return Object.assign(localState, actions, gettersArgs)
+  // 对于setup api 没有初始化状态
+  const initalState = pinia.state.value[$id]
+  if (!initalState && !isOptions) {
+    pinia.state.value[$id] = {}
   }
-
   const setupStore = pinia._e.run(() => {
     scope = effectScope()
     return scope.run(() => setup())
@@ -74,10 +70,38 @@ function createOptionsStore($id, options, pinia) {
     if (isFunction(prop)) {
       setupStore[key] = wrapAction(key, prop)
     }
+    // 处理setup store,把ref、reactive放入到state中
+    if ((isRef(prop) && !isComputed(prop)) || isReactive(prop)) {
+      // 是ref或reactive,并且setup store
+      if (!isOptions) {
+        pinia.state.value[$id][key] = prop
+      }
+    }
   }
   store.$id = $id
 
   pinia._s.set($id, store)
   Object.assign(store, setupStore)
   return store
+}
+function createOptionsStore($id, options, pinia) {
+  const { state, getters, actions } = options
+
+  // 对用户传入的state,getters,actions进行处理
+  function setup() {
+    // pinia.state是一个ref,给当前store的state赋值
+    pinia.state.value[$id] = state ? state() : {}
+    const localState = pinia.state.value[$id]
+    // getters
+    const gettersArgs = Object.keys(getters || {}).reduce((computedGetters, name) => {
+      computedGetters[name] = computed(() => {
+        let store = pinia._s.get($id)
+        return getters[name].call(store, store)
+      })
+      return computedGetters
+    }, {})
+    return Object.assign(localState, actions, gettersArgs)
+  }
+
+  return createSetupStore($id, setup, pinia, true)
 }
