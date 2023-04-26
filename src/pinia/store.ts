@@ -174,7 +174,14 @@ function createSetupStore($id, setup, pinia, isOptions = false) {
       $patch($state => Object.assign($state, state))
     }
   })
-
+  // 插件
+  pinia._p.forEach(extender => {
+    // 将插件的返回值作为store的属性
+    Object.assign(
+      store,
+      scope.run(() => extender({ store }))
+    )
+  })
   return store
 }
 function createOptionsStore($id, options, pinia) {
